@@ -84,6 +84,7 @@ export interface TeamMember {
   isSuperAdmin?: boolean;
   playbookProgress?: { [playbookId: string]: string[] };
   assignedLearningPathId?: string;
+  assignedHabitTrackerTemplateId?: string;
   newAgentResources?: NewAgentResources;
   onboardingChecklistProgress?: string[];
   zapierApiKey?: string;
@@ -502,7 +503,7 @@ export interface LiveSession {
   clientName?: string;
   clientEmail?: string;
 
-  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'live' | 'completed' | 'cancelled' | 'ended';
   createdAt: string;
   
   // Distribution tracking

@@ -400,6 +400,21 @@ const AgentDetailPage: React.FC = () => {
 
         } catch (err: any) {
             console.error("Error fetching agent data:", err);
+            // Critical Directive: Error Handling Spec
+            const errInfo = {
+                error: err instanceof Error ? err.message : String(err),
+                operationType: 'get',
+                path: 'AgentDetailPage',
+                authInfo: {
+                    userId: user?.uid || 'unknown',
+                    email: user?.email || 'unknown',
+                    emailVerified: false,
+                    isAnonymous: false,
+                    tenantId: '',
+                    providerInfo: []
+                }
+            };
+            console.error('Firestore Error: ', JSON.stringify(errInfo));
             setError("Failed to load agent details. " + (err.message || "An unexpected error occurred."));
         } finally {
             setLoading(false);

@@ -110,6 +110,7 @@ interface AuthContextType {
   updateUserRole: (userId: string, role: TeamMember['role']) => Promise<void>;
   updateUserMarketCenterForAdmin: (userId: string, marketCenterId: string | null) => Promise<void>;
   updateUserRoleAndMarketCenterAffiliation: (userId: string, newRole: TeamMember['role'], newMarketCenterId: string | null) => Promise<void>;
+  updateUserAssignments: (userId: string, assignedLearningPathId: string | null, assignedHabitTrackerTemplateId: string | null) => Promise<void>;
   getAllTeams: (marketCenterId?: string) => Promise<Team[]>;
   getAllTransactionsForAdmin: () => Promise<Transaction[]>;
   updatePlaybookProgress: (playbookId: string, completedLessonIds: string[]) => Promise<void>;
@@ -795,6 +796,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await updateDoc(doc(db, 'users', agentId), { teamId: newTeamId });
     }, []);
 
+    const updateUserAssignments = useCallback(async (userId: string, assignedLearningPathId: string | null, assignedHabitTrackerTemplateId: string | null) => {
+        const db = getFirestoreInstance();
+        if (!db) return;
+        await updateDoc(doc(db, 'users', userId), { 
+            assignedLearningPathId: assignedLearningPathId || null, 
+            assignedHabitTrackerTemplateId: assignedHabitTrackerTemplateId || null 
+        });
+    }, []);
+
     const getBudgetModelForUser = useCallback(async (userId: string) => {
         const db = getFirestoreInstance();
         if (!db) return null;
@@ -1202,7 +1212,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         getHomeworkForManagedUsers, getHabitLogsForManagedUsers, getHabitLogsForUser, deleteHomeworkForUser, getCommissionProfileForUser,
         saveCommissionProfile, getTransactionsForManagedUsers, getTransactionsForUser, getAllCommissionProfiles, addPerformanceLog, 
         getPerformanceLogsForAgent, getPerformanceLogsForCurrentUser, getPerformanceLogsForManagedUsers, updatePerformanceLog, updateContributingAgents,
-        updateCoachRoster, updateUserCoachAssignment, updateUserTeamAffiliation, getBudgetModelForUser, saveBudgetModel, getMarketCenters, createMarketCenter, deleteMarketCenter, assignMcAdmin,
+        updateCoachRoster, updateUserCoachAssignment, updateUserTeamAffiliation, updateUserAssignments, getBudgetModelForUser, saveBudgetModel, getMarketCenters, createMarketCenter, deleteMarketCenter, assignMcAdmin,
         removeMcAdmin, updateUserMarketCenter, updateUserMarketCenterForAdmin, updateUserRole, updateUserRoleAndMarketCenterAffiliation, getAllTeams, getAllTransactionsForAdmin,
         updatePlaybookProgress, updateOnboardingChecklistProgress, getOrgBlueprintForUser, getPlaybooksForUser,
         getTransactionsForMarketCenter, getCommissionProfilesForMarketCenter, getBudgetModelsForMarketCenter, getCandidatesForMarketCenter,
@@ -1221,7 +1231,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         getHomeworkForManagedUsers, getHabitLogsForManagedUsers, getHabitLogsForUser, deleteHomeworkForUser, getCommissionProfileForUser,
         saveCommissionProfile, getTransactionsForManagedUsers, getTransactionsForUser, getAllCommissionProfiles, addPerformanceLog,
         getPerformanceLogsForAgent, getPerformanceLogsForCurrentUser, getPerformanceLogsForManagedUsers, updatePerformanceLog, updateContributingAgents,
-        updateCoachRoster, updateUserCoachAssignment, updateUserTeamAffiliation, getBudgetModelForUser, saveBudgetModel, getMarketCenters, createMarketCenter, deleteMarketCenter, assignMcAdmin,
+        updateCoachRoster, updateUserCoachAssignment, updateUserTeamAffiliation, updateUserAssignments, getBudgetModelForUser, saveBudgetModel, getMarketCenters, createMarketCenter, deleteMarketCenter, assignMcAdmin,
         removeMcAdmin, updateUserMarketCenter, updateUserMarketCenterForAdmin, updateUserRole, updateUserRoleAndMarketCenterAffiliation, getAllTeams, getAllTransactionsForAdmin,
         updatePlaybookProgress, updateOnboardingChecklistProgress, getOrgBlueprintForUser, getPlaybooksForUser,
         getTransactionsForMarketCenter, getCommissionProfilesForMarketCenter, getBudgetModelsForMarketCenter, getCandidatesForMarketCenter,

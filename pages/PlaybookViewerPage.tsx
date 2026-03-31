@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getFirestoreInstance } from '../firebaseConfig';
 import { doc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -359,6 +359,8 @@ const QuizViewer: React.FC<{
 
 const PlaybookViewerPage: React.FC = () => {
     const { playbookId } = useParams<{ playbookId: string }>();
+    const [searchParams] = useSearchParams();
+    const lessonIdParam = searchParams.get('lessonId');
     const { user, userData, updatePlaybookProgress } = useAuth();
     const [playbook, setPlaybook] = useState<Playbook | null>(null);
     const [loading, setLoading] = useState(true);
@@ -418,8 +420,11 @@ const PlaybookViewerPage: React.FC = () => {
                     const pb = processPlaybookDoc(docSnap);
                     setPlaybook(pb);
 
-                    const firstUncompleted = pb.modules.flatMap(m => m.lessons).find(l => !userData?.playbookProgress?.[playbookId]?.includes(l.id));
-                    handleLessonSelect(firstUncompleted || pb.modules?.[0]?.lessons?.[0] || null);
+                    const allLessons = pb.modules.flatMap(m => m.lessons);
+                    const targetLesson = lessonIdParam ? allLessons.find(l => l.id === lessonIdParam) : null;
+                    const firstUncompleted = allLessons.find(l => !userData?.playbookProgress?.[playbookId]?.includes(l.id));
+                    
+                    handleLessonSelect(targetLesson || firstUncompleted || pb.modules?.[0]?.lessons?.[0] || null);
                     
                     const initialExpanded: Record<string, boolean> = {};
                     pb.modules.forEach(m => initialExpanded[m.id] = true);
@@ -430,7 +435,7 @@ const PlaybookViewerPage: React.FC = () => {
              finally { setLoading(false); }
         };
         fetchPlaybook();
-    }, [playbookId, userData]);
+    }, [playbookId, userData, lessonIdParam]);
 
     const handleMarkComplete = () => {
         if (!activeLesson || completedLessons.includes(activeLesson.id)) return;
@@ -604,11 +609,24 @@ const PlaybookViewerPage: React.FC = () => {
                 <main className={`${isMobileListVisible ? 'hidden' : 'block'} md:block w-full md:w-2/3 lg:w-3/4 bg-surface rounded-2xl flex flex-col overflow-hidden min-h-0`}>
                     {activeLesson ? (
                         <>
-                            <div className="p-6 flex-grow overflow-y-auto min-h-0">
+                            <div className="p-6 pb-12 flex-grow overflow-y-auto min-h-0">
                                 <button onClick={() => setIsMobileListVisible(true)} className="md:hidden flex items-center gap-2 text-sm font-semibold text-primary hover:underline mb-4">
                                     <ArrowLeft size={16}/> Back to Contents
                                 </button>
-                                <h2 className="text-2xl font-bold mb-4">{activeLesson.title}</h2>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-2xl font-bold">{activeLesson.title}</h2>
+                                    <button 
+                                        onClick={() => {
+                                            const url = `${window.location.origin}/playbook/${playbookId}?lessonId=${activeLesson.id}`;
+                                            navigator.clipboard.writeText(url);
+                                            alert('Link copied to clipboard!');
+                                        }}
+                                        className="p-2 hover:bg-surface-hover rounded-lg text-text-secondary hover:text-primary transition-colors"
+                                        title="Copy link to this lesson"
+                                    >
+                                        <Share2 size={20} />
+                                    </button>
+                                </div>
                                 {renderLessonContent(activeLesson)}
                             </div>
                             <div className="flex justify-between items-center p-4 border-t border-border flex-shrink-0">

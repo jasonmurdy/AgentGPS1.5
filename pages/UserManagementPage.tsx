@@ -2,10 +2,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Card } from '../components/ui/Card';
 import { Spinner } from '../components/ui/Spinner';
-import type { TeamMember, Team, MarketCenter } from '../types';
+import type { TeamMember, Team, MarketCenter, LearningPath, HabitTrackerTemplate } from '../types';
 import { Users as UsersIcon, Search, SlidersHorizontal, Edit, UserPlus, X } from 'lucide-react';
 import { EditUserModal } from '../components/admin/EditUserModal';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove, collection, getDocs } from 'firebase/firestore';
 // Fix: 'db' is not an exported member of '../firebaseConfig'. Replaced with 'getFirestoreInstance'.
 import { getFirestoreInstance } from '../firebaseConfig';
 import { createPortal } from 'react-dom';
@@ -176,6 +176,8 @@ const UserManagementPage: React.FC = () => {
     const [allTeams, setAllTeams] = useState<Team[]>([]); // Keep raw array for modal
     const [marketCenters, setMarketCenters] = useState<Map<string, MarketCenter>>(new Map());
     const [allMarketCenters, setAllMarketCenters] = useState<MarketCenter[]>([]); // Keep raw array for modal
+    const [learningPaths, setLearningPaths] = useState<LearningPath[]>([]);
+    const [habitTrackerTemplates, setHabitTrackerTemplates] = useState<HabitTrackerTemplate[]>([]);
     const [loading, setLoading] = useState(true);
     
     const [filters, setFilters] = useState({ role: 'all', mcId: 'all', teamId: 'all', search: '' });
@@ -192,10 +194,12 @@ const UserManagementPage: React.FC = () => {
         setLoading(true);
         try {
             const mcId = currentUserData?.role === 'market_center_admin' ? currentUserData.marketCenterId : undefined;
-            const [usersData, teamsData, mcData] = await Promise.all([
+            const [usersData, teamsData, mcData, learningPathsSnap, habitTrackerSnap] = await Promise.all([
                 getAllUsers(mcId),
                 getAllTeams(mcId),
                 getMarketCenters(),
+                getDocs(collection(getFirestoreInstance(), 'learningPaths')),
+                getDocs(collection(getFirestoreInstance(), 'habitTrackerTemplates')),
             ]);
             
             setUsers(usersData);
@@ -203,9 +207,23 @@ const UserManagementPage: React.FC = () => {
             setTeams(new Map(teamsData.map(t => [t.id, t.name])));
             setAllMarketCenters(mcData);
             setMarketCenters(new Map(mcData.map(mc => [mc.id, mc])));
+            setLearningPaths(learningPathsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as LearningPath)));
+            setHabitTrackerTemplates(habitTrackerSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HabitTrackerTemplate)));
 
         } catch (error) {
             console.error("Failed to fetch user management data:", error);
+            // Critical Directive: Error Handling Spec
+            const errInfo = {
+                error: error instanceof Error ? error.message : String(error),
+                operationType: 'list',
+                path: 'UserManagementPage',
+                authInfo: {
+                    userId: 'unknown', // Need to get auth.currentUser
+                    email: 'unknown',
+                    // ...
+                }
+            };
+            console.error('Firestore Error: ', JSON.stringify(errInfo));
         } finally {
             setLoading(false);
         }
@@ -234,11 +252,12 @@ const UserManagementPage: React.FC = () => {
         setIsEditModalOpen(true);
     };
 
-    const handleSaveUser = async (updates: { newRole: TeamMember['role'], newMarketCenterId: string | null }) => {
+    const handleSaveUser = async (updates: { newRole: TeamMember['role'], newMarketCenterId: string | null, newAssignedLearningPathId: string | null, newAssignedHabitTrackerTemplateId: string | null }) => {
         if (!userToEdit) return;
 
         // Use the comprehensive function to update role AND handle MC adminIds array
         await updateUserRoleAndMarketCenterAffiliation(userToEdit.id, updates.newRole, updates.newMarketCenterId);
+        await updateUserAssignments(userToEdit.id, updates.newAssignedLearningPathId, updates.newAssignedHabitTrackerTemplateId);
         
         fetchData(); // Refetch all data to ensure consistency
     };
@@ -456,6 +475,8 @@ const UserManagementPage: React.FC = () => {
                     onSave={handleSaveUser}
                     agent={userToEdit}
                     marketCenters={Array.from(marketCenters.values())}
+                    learningPaths={learningPaths}
+                    habitTrackerTemplates={habitTrackerTemplates}
                 />
             )}
             <CreateUserModal

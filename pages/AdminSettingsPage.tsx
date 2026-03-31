@@ -431,6 +431,14 @@ const LiveSessionsManagement: React.FC = () => {
         setSessions(sessions.filter(s => s.id !== id));
     };
 
+    const handleEndSession = async (id: string) => {
+        if (!window.confirm("Mark this session as ended?")) return;
+        const db = getFirestoreInstance();
+        if (!db) return;
+        await updateDoc(doc(db, 'liveSessions', id), { status: 'ended' });
+        setSessions(sessions.map(s => s.id === id ? { ...s, status: 'ended' } : s));
+    };
+
     return (
         <Card className="mt-6">
             <div className="flex items-center justify-between mb-6">
@@ -463,9 +471,22 @@ const LiveSessionsManagement: React.FC = () => {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${session.status === 'scheduled' ? 'bg-blue-500/10 text-blue-500' : 'bg-success/10 text-success'}`}>
+                            <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-full ${
+                                session.status === 'scheduled' ? 'bg-blue-500/10 text-blue-500' : 
+                                session.status === 'live' ? 'bg-success/10 text-success' : 
+                                'bg-text-secondary/10 text-text-secondary'
+                            }`}>
                                 {session.status}
                             </span>
+                            {session.status !== 'ended' && session.status !== 'completed' && (
+                                <button 
+                                    onClick={() => handleEndSession(session.id)} 
+                                    className="p-2 text-success hover:bg-success/10 rounded-full transition-colors"
+                                    title="Mark as Ended"
+                                >
+                                    <CheckCircle size={16} />
+                                </button>
+                            )}
                             <button onClick={() => handleDelete(session.id)} className="p-2 text-destructive hover:bg-destructive/10 rounded-full transition-colors">
                                 <Trash2 size={16} />
                             </button>

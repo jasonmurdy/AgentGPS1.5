@@ -14,7 +14,7 @@ import { Card } from '../components/ui/Card';
 import { useAuth, P } from '../contexts/AuthContext';
 import { DashboardVisualizations } from '../components/dashboard/DashboardVisualizations';
 import { getFirestoreInstance } from '../firebaseConfig';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import type { Goal, Playbook, LiveSession, DashboardWidgetConfig } from '../types';
 import { GoalModal } from '../components/goals/AddGoalModal';
 import { processPlaybookDoc } from '../lib/firestoreUtils';
@@ -78,13 +78,17 @@ const UpcomingLiveSessions: React.FC = () => {
                 collection(db, 'liveSessions'),
                 where('marketCenterId', '==', userData.marketCenterId),
                 where('status', 'in', ['scheduled', 'live']),
-                orderBy('startTime', 'asc'),
-                limit(2)
+                orderBy('startTime', 'asc')
             );
 
             try {
                 const snap = await getDocs(q);
-                setSessions(snap.docs.map(d => ({ id: d.id, ...d.data() } as LiveSession)));
+                const now = new Date().toISOString();
+                const activeSessions = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() } as LiveSession))
+                    .filter(s => s.endTime > now)
+                    .slice(0, 2);
+                setSessions(activeSessions);
             } catch (error) {
                 console.error("Error fetching dashboard sessions:", error);
             } finally {

@@ -376,11 +376,21 @@ export const GoalProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const getAllGoals = useCallback(async (): Promise<Goal[]> => {
     const db = getFirestoreInstance();
-    if (!db) return [];
-    const goalsCollectionRef = collection(db, 'goals');
-    const querySnapshot = await getDocs(goalsCollectionRef);
-    return querySnapshot.docs.map(processGoalDoc);
-  }, []);
+    // Prevent the query from even running if the user is not a super admin
+    if (!db || !userData || !P.isSuperAdmin(userData)) {
+        console.warn("Unauthorized or missing db instance for getAllGoals.");
+        return [];
+    }
+
+    try {
+        const goalsCollectionRef = collection(db, 'goals');
+        const querySnapshot = await getDocs(goalsCollectionRef);
+        return querySnapshot.docs.map(processGoalDoc);
+    } catch (error) {
+        console.error("Error fetching all goals:", error);
+        return [];
+    }
+  }, [userData]);
 
 
   const value = useMemo(() => ({ goals, personalGoals, addGoal, updateGoal, deleteGoal, loading, updateGoalProgress, resetGoalProgress, toggleGoalArchiveStatus, getGoalsForUser, getPublicGoals, getAllGoals }),

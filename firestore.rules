@@ -17,6 +17,12 @@ service cloud.firestore {
         isSuperAdmin: false
       };
     }
+
+    // Securely look up the target user's profile to check their team/MC affiliation
+    function getTargetUser(userId) {
+      let path = /databases/$(database)/documents/users/$(userId);
+      return exists(path) ? get(path).data : null;
+    }
     
     function isSuperAdmin() {
       return isSignedIn() && getUserData().get('isSuperAdmin', false) == true;
@@ -24,21 +30,28 @@ service cloud.firestore {
     
     function isOwnerOrManager(data, ownerId) {
       let user = getUserData();
+      let targetUser = ownerId != null ? getTargetUser(ownerId) : null;
+      
       return isSuperAdmin() ||
              (ownerId != null && request.auth.uid == ownerId) ||
-             (data.get('coachId', null) != null && request.auth.uid == data.coachId) ||
-             (data.get('marketCenterId', null) != null && user.marketCenterId == data.marketCenterId && (user.role == 'market_center_admin' || user.role == 'productivity_coach')) ||
-             (data.get('teamId', null) != null && user.teamId == data.teamId && user.role == 'team_leader');
+             // 1. Check document fields directly (if the document stores teamId/marketCenterId)
+             (data != null && data.get('coachId', null) != null && request.auth.uid == data.coachId) ||
+             (data != null && data.get('marketCenterId', null) != null && user.get('marketCenterId', null) == data.marketCenterId && (user.get('role', '') == 'market_center_admin' || user.get('role', '') == 'productivity_coach' || user.get('role', '') == 'recruiter')) ||
+             (data != null && data.get('teamId', null) != null && user.get('teamId', null) == data.teamId && user.get('role', '') == 'team_leader') ||
+             // 2. Fallback to checking the target user's fields (for documents that only store ownerId)
+             (targetUser != null && targetUser.get('coachId', null) != null && request.auth.uid == targetUser.coachId) ||
+             (targetUser != null && targetUser.get('marketCenterId', null) != null && user.get('marketCenterId', null) == targetUser.marketCenterId && (user.get('role', '') == 'market_center_admin' || user.get('role', '') == 'productivity_coach' || user.get('role', '') == 'recruiter')) ||
+             (targetUser != null && targetUser.get('teamId', null) != null && user.get('teamId', null) == targetUser.teamId && user.get('role', '') == 'team_leader');
     }
 
     function isResourceManager(data) {
-      return isSuperAdmin();
+      return isSuperAdmin() || isMCManager(data == null ? null : data.get('marketCenterId', null));
     }
 
     function isMCManager(mcId) {
       let user = getUserData();
       return isSuperAdmin() || 
-             (isSignedIn() && mcId != null && user.marketCenterId == mcId && (user.role == 'market_center_admin' || user.role == 'productivity_coach' || user.role == 'recruiter'));
+             (isSignedIn() && mcId != null && user.get('marketCenterId', null) == mcId && (user.get('role', '') == 'market_center_admin' || user.get('role', '') == 'productivity_coach' || user.get('role', '') == 'recruiter'));
     }
 
     // --- Collection Rules ---
@@ -47,9 +60,9 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn() && (
         request.auth.uid == userId || 
-        request.auth.uid == resource.data.get('coachId', null) ||
-        isOwnerOrManager(resource.data, userId) || 
-        isMCManager(resource.data.get('marketCenterId', null))
+        (resource != null && request.auth.uid == resource.data.get('coachId', null)) ||
+        isOwnerOrManager(resource == null ? null : resource.data, userId) || 
+        isMCManager(resource == null ? null : resource.data.get('marketCenterId', null))
       );
       allow create: if isSignedIn() && request.resource.data.get('isSuperAdmin', false) == false;
       allow update: if isSignedIn() && (
@@ -65,10 +78,11 @@ service cloud.firestore {
     // Goals
     match /goals/{goalId} {
       allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.get('userId', null) ||
-        request.auth.uid == resource.data.get('coachId', null) ||
-        isOwnerOrManager(resource.data, resource.data.get('userId', null)) || 
-        resource.data.get('visibility', 'solo') == 'public'
+        (resource != null && request.auth.uid == resource.data.get('userId', null)) ||
+        (resource != null && request.auth.uid == resource.data.get('coachId', null)) ||
+        isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('userId', null)) || 
+        (resource != null && resource.data.get('visibility', 'solo') == 'public') ||
+        (resource != null && resource.data.get('visibility', 'solo') == 'team_view_only' && resource.data.get('teamId', null) == getUserData().get('teamId', ''))
       );
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
@@ -78,9 +92,9 @@ service cloud.firestore {
     // Transactions
     match /transactions/{txId} {
       allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.get('userId', null) ||
-        request.auth.uid == resource.data.get('coachId', null) ||
-        isOwnerOrManager(resource.data, resource.data.get('userId', null))
+        (resource != null && request.auth.uid == resource.data.get('userId', null)) ||
+        (resource != null && request.auth.uid == resource.data.get('coachId', null)) ||
+        isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('userId', null))
       );
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
@@ -90,9 +104,9 @@ service cloud.firestore {
     // Daily Trackers (Habits)
     match /dailyTrackers/{trackerId} {
       allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.get('userId', null) ||
-        request.auth.uid == resource.data.get('coachId', null) ||
-        isOwnerOrManager(resource.data, resource.data.get('userId', null))
+        (resource != null && request.auth.uid == resource.data.get('userId', null)) ||
+        (resource != null && request.auth.uid == resource.data.get('coachId', null)) ||
+        isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('userId', null))
       );
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
@@ -101,7 +115,7 @@ service cloud.firestore {
 
     // Performance Logs
     match /performanceLogs/{logId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('agentId', null));
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('agentId', null));
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('agentId', null));
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('agentId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('agentId', null));
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('agentId', null));
@@ -110,8 +124,8 @@ service cloud.firestore {
     // Teams
     match /teams/{teamId} {
       allow read: if isSignedIn() && (
-        request.auth.uid in resource.data.get('memberIds', []) || 
-        isResourceManager(resource.data)
+        (resource != null && request.auth.uid in resource.data.get('memberIds', [])) || 
+        isResourceManager(resource == null ? null : resource.data)
       );
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.get('creatorId', null);
       allow update: if isSignedIn() && (request.auth.uid == resource.data.get('creatorId', null) || isResourceManager(resource.data));
@@ -128,7 +142,10 @@ service cloud.firestore {
 
     // Candidates (Recruitment)
     match /candidates/{candidateId} {
-      allow read: if isSignedIn() && (request.auth.uid == resource.data.get('recruiterId', null) || isMCManager(resource.data.get('marketCenterId', null)));
+      allow read: if isSignedIn() && (
+        (resource != null && request.auth.uid == resource.data.get('recruiterId', null)) || 
+        isMCManager(resource == null ? null : resource.data.get('marketCenterId', null))
+      );
       allow create: if isSignedIn() && (request.auth.uid == request.resource.data.get('recruiterId', null) || isMCManager(request.resource.data.get('marketCenterId', null)));
       allow update: if isSignedIn() && (request.auth.uid == resource.data.get('recruiterId', null) || isMCManager(resource.data.get('marketCenterId', null))) && (request.auth.uid == request.resource.data.get('recruiterId', null) || isMCManager(request.resource.data.get('marketCenterId', null)));
       allow delete: if isSignedIn() && (request.auth.uid == resource.data.get('recruiterId', null) || isMCManager(resource.data.get('marketCenterId', null)));
@@ -136,7 +153,10 @@ service cloud.firestore {
 
     // Candidate Activities
     match /candidateActivities/{activityId} {
-      allow read: if isSignedIn() && (request.auth.uid == resource.data.get('recruiterId', null) || isMCManager(resource.data.get('marketCenterId', null)));
+      allow read: if isSignedIn() && (
+        (resource != null && request.auth.uid == resource.data.get('recruiterId', null)) || 
+        isMCManager(resource == null ? null : resource.data.get('marketCenterId', null))
+      );
       allow create: if isSignedIn() && (request.auth.uid == request.resource.data.get('recruiterId', null) || isMCManager(request.resource.data.get('marketCenterId', null)));
       allow update: if isSignedIn() && (request.auth.uid == resource.data.get('recruiterId', null) || isMCManager(resource.data.get('marketCenterId', null))) && (request.auth.uid == request.resource.data.get('recruiterId', null) || isMCManager(request.resource.data.get('marketCenterId', null)));
       allow delete: if isSignedIn() && (request.auth.uid == resource.data.get('recruiterId', null) || isMCManager(resource.data.get('marketCenterId', null)));
@@ -144,7 +164,7 @@ service cloud.firestore {
 
     // Client Leads
     match /clientLeads/{leadId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('ownerId', null));
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('ownerId', null));
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('ownerId', null));
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('ownerId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('ownerId', null));
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('ownerId', null));
@@ -152,15 +172,15 @@ service cloud.firestore {
 
     // Client Lead Activities
     match /clientLeadActivities/{activityId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('ownerId', null));
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('ownerId', null));
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('ownerId', null));
-      allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('ownerId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('ownerId', null));
-      allow delete: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('ownerId', null));
+      allow update: if isSignedIn() && isOwnerOrManager(resource.data, request.resource.data.get('ownerId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('ownerId', null));
+      allow delete: if isSignedIn() && isOwnerOrManager(resource.data, request.resource.data.get('ownerId', null));
     }
     
     // Todos
     match /todos/{todoId} {
-      allow read: if isSignedIn() && request.auth.uid == resource.data.get('userId', null);
+      allow read: if isSignedIn() && (resource == null || request.auth.uid == resource.data.get('userId', null));
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.get('userId', null);
       allow update: if isSignedIn() && request.auth.uid == resource.data.get('userId', null) && request.auth.uid == request.resource.data.get('userId', null);
       allow delete: if isSignedIn() && request.auth.uid == resource.data.get('userId', null);
@@ -168,7 +188,7 @@ service cloud.firestore {
 
     // Announcements
     match /announcements/{annId} {
-      allow read: if isSignedIn() && (resource.data.get('marketCenterId', null) == null || resource.data.get('marketCenterId', null) == getUserData().marketCenterId);
+      allow read: if isSignedIn() && (resource == null || resource.data.get('marketCenterId', null) == null || resource.data.get('marketCenterId', null) == getUserData().marketCenterId);
       allow create: if isSignedIn() && isResourceManager(request.resource.data);
       allow update: if isSignedIn() && isResourceManager(resource.data) && isResourceManager(request.resource.data);
       allow delete: if isSignedIn() && isResourceManager(resource.data);
@@ -177,21 +197,27 @@ service cloud.firestore {
     // Playbooks and Learning Paths
     match /playbooks/{id} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isResourceManager(request.resource.data);
-      allow update: if isSignedIn() && isResourceManager(resource.data) && isResourceManager(request.resource.data);
-      allow delete: if isSignedIn() && isResourceManager(resource.data);
+      allow create: if isSignedIn() && (isSuperAdmin() || request.auth.uid == request.resource.data.get('creatorId', null));
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.auth.uid == resource.data.get('creatorId', null) && request.auth.uid == request.resource.data.get('creatorId', null))
+      );
+      allow delete: if isSignedIn() && (isSuperAdmin() || request.auth.uid == resource.data.get('creatorId', null));
     }
     
     match /learningPaths/{id} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isResourceManager(request.resource.data);
-      allow update: if isSignedIn() && isResourceManager(resource.data) && isResourceManager(request.resource.data);
-      allow delete: if isSignedIn() && isResourceManager(resource.data);
+      allow create: if isSignedIn() && (isSuperAdmin() || request.auth.uid == request.resource.data.get('creatorId', null));
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (request.auth.uid == resource.data.get('creatorId', null) && request.auth.uid == request.resource.data.get('creatorId', null))
+      );
+      allow delete: if isSignedIn() && (isSuperAdmin() || request.auth.uid == resource.data.get('creatorId', null));
     }
 
     // User Submissions (LMS)
     match /submissions/{subId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null));
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('userId', null));
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null));
@@ -199,7 +225,7 @@ service cloud.firestore {
 
     // Notifications
     match /notifications/{notifId} {
-      allow read: if isSignedIn() && request.auth.uid == resource.data.get('userId', null);
+      allow read: if isSignedIn() && (resource == null || request.auth.uid == resource.data.get('userId', null));
       allow create: if isSignedIn();
       allow update: if isSignedIn() && request.auth.uid == resource.data.get('userId', null);
       allow delete: if isSignedIn() && request.auth.uid == resource.data.get('userId', null);
@@ -207,7 +233,7 @@ service cloud.firestore {
 
     // Commission Profiles
     match /commissionProfiles/{profileId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, profileId);
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, profileId);
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, profileId);
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, profileId) && isOwnerOrManager(request.resource.data, profileId);
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, profileId);
@@ -215,9 +241,9 @@ service cloud.firestore {
 
     // Budget Models
     match /budgetModels/{modelId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null));
-      allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
-      allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null)) && isOwnerOrManager(request.resource.data, request.resource.data.get('userId', null));
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, resource == null ? null : resource.data.get('userId', null));
+      allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, resource.data.get('userId', null));
+      allow update: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null)) && isOwnerOrManager(request.resource.data, resource.data.get('userId', null));
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, resource.data.get('userId', null));
     }
 
@@ -225,6 +251,7 @@ service cloud.firestore {
     match /liveSessions/{sessionId} {
       allow read: if isSignedIn() && (
         isSuperAdmin() || 
+        resource == null ||
         resource.data.get('marketCenterId', null) == null ||
         resource.data.get('marketCenterId', null) == getUserData().marketCenterId || 
         (request.auth.token.email in resource.data.get('attendees', []))
@@ -241,7 +268,7 @@ service cloud.firestore {
 
     // Business GPS
     match /businessGps/{userId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, userId);
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, userId);
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, userId);
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, userId) && isOwnerOrManager(request.resource.data, userId);
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, userId);
@@ -257,7 +284,7 @@ service cloud.firestore {
 
     // Organizational Blueprints
     match /orgBlueprints/{userId} {
-      allow read: if isSignedIn() && isOwnerOrManager(resource.data, userId);
+      allow read: if isSignedIn() && isOwnerOrManager(resource == null ? null : resource.data, userId);
       allow create: if isSignedIn() && isOwnerOrManager(request.resource.data, userId);
       allow update: if isSignedIn() && isOwnerOrManager(resource.data, userId) && isOwnerOrManager(request.resource.data, userId);
       allow delete: if isSignedIn() && isOwnerOrManager(resource.data, userId);

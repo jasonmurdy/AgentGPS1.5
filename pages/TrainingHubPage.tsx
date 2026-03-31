@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card';
 import { BookOpen, Rocket, Route, CheckCircle, ChevronRight, GraduationCap, Video } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getFirestoreInstance } from '../firebaseConfig';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import type { LiveSession } from '../types';
 import { LiveSessionCard } from '../components/launchpad/LiveSessionCard';
 import { Spinner } from '../components/ui/Spinner';
@@ -27,8 +27,7 @@ const TrainingHubPage: React.FC = () => {
                     q = query(
                         collection(db, 'liveSessions'),
                         where('status', 'in', ['scheduled', 'live']),
-                        orderBy('startTime', 'asc'),
-                        limit(10)
+                        orderBy('startTime', 'asc')
                     );
                 } else if (userData.marketCenterId) {
                     q = query(
@@ -36,8 +35,7 @@ const TrainingHubPage: React.FC = () => {
                         where('marketCenterId', '==', userData.marketCenterId),
                         where('sessionType', '==', 'mc-training'),
                         where('status', 'in', ['scheduled', 'live']),
-                        orderBy('startTime', 'asc'),
-                        limit(3)
+                        orderBy('startTime', 'asc')
                     );
                 } else {
                     setLoadingSessions(false);
@@ -45,7 +43,12 @@ const TrainingHubPage: React.FC = () => {
                 }
 
                 const snap = await getDocs(q);
-                setLiveSessions(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) } as LiveSession)));
+                const now = new Date().toISOString();
+                const activeSessions = snap.docs
+                    .map(d => ({ id: d.id, ...(d.data() as any) } as LiveSession))
+                    .filter(s => s.endTime > now)
+                    .slice(0, 10);
+                setLiveSessions(activeSessions);
             } catch (error) {
                 console.error("Error fetching live sessions:", error);
             } finally {

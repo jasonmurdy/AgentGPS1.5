@@ -9,16 +9,20 @@ import { useAuth } from '../../contexts/AuthContext';
 interface EditUserModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (updates: { newRole: TeamMember['role'], newMarketCenterId: string | null }) => Promise<void>;
+    onSave: (updates: { newRole: TeamMember['role'], newMarketCenterId: string | null, newAssignedLearningPathId: string | null, newAssignedHabitTrackerTemplateId: string | null }) => Promise<void>;
     agent: TeamMember;
     marketCenters: MarketCenter[];
+    learningPaths: LearningPath[];
+    habitTrackerTemplates: HabitTrackerTemplate[];
 }
 
-export const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, onSave, agent, marketCenters }) => {
+export const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, onSave, agent, marketCenters, learningPaths, habitTrackerTemplates }) => {
     const { userData } = useAuth();
     const isCurrentUserSuperAdmin = userData?.isSuperAdmin;
     const [selectedRole, setSelectedRole] = useState<TeamMember['role']>(agent.role || 'agent');
     const [selectedMarketCenterId, setSelectedMarketCenterId] = useState<string>(agent.marketCenterId || '');
+    const [selectedLearningPathId, setSelectedLearningPathId] = useState<string>(agent.assignedLearningPathId || '');
+    const [selectedHabitTrackerTemplateId, setSelectedHabitTrackerTemplateId] = useState<string>(agent.assignedHabitTrackerTemplateId || '');
     const [loading, setLoading] = useState(false);
     const [localError, setLocalError] = useState('');
 
@@ -26,6 +30,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, o
         if (isOpen) {
             setSelectedRole(agent.role || 'agent');
             setSelectedMarketCenterId(agent.marketCenterId || '');
+            setSelectedLearningPathId(agent.assignedLearningPathId || '');
+            setSelectedHabitTrackerTemplateId(agent.assignedHabitTrackerTemplateId || '');
             setLocalError('');
         }
     }, [isOpen, agent]);
@@ -59,6 +65,8 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, o
             await onSave({
                 newRole: selectedRole,
                 newMarketCenterId: selectedMarketCenterId === '' ? null : selectedMarketCenterId,
+                newAssignedLearningPathId: selectedLearningPathId === '' ? null : selectedLearningPathId,
+                newAssignedHabitTrackerTemplateId: selectedHabitTrackerTemplateId === '' ? null : selectedHabitTrackerTemplateId,
             });
             onClose();
         } catch (error) {
@@ -133,6 +141,30 @@ export const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, o
                                 </select>
                             </div>
                         )}
+                        <div>
+                            <label htmlFor="learning-path-select" className={labelClasses}>Learning Path</label>
+                            <select
+                                id="learning-path-select"
+                                value={selectedLearningPathId}
+                                onChange={e => setSelectedLearningPathId(e.target.value)}
+                                className={inputClasses}
+                            >
+                                <option value="">-- No Learning Path --</option>
+                                {learningPaths.map(lp => <option key={lp.id} value={lp.id}>{lp.title}</option>)}
+                            </select>
+                        </div>
+                        <div>
+                            <label htmlFor="habit-tracker-select" className={labelClasses}>Daily Tracker Template</label>
+                            <select
+                                id="habit-tracker-select"
+                                value={selectedHabitTrackerTemplateId}
+                                onChange={e => setSelectedHabitTrackerTemplateId(e.target.value)}
+                                className={inputClasses}
+                            >
+                                <option value="">-- No Daily Tracker Template --</option>
+                                {habitTrackerTemplates.map(ht => <option key={ht.id} value={ht.title}>{ht.title}</option>)}
+                            </select>
+                        </div>
                     </div>
                     <div className="flex justify-end gap-4 pt-6">
                         <button type="button" onClick={onClose} className="py-2 px-4 rounded-lg text-text-secondary hover:bg-primary/10">Cancel</button>
